@@ -1,5 +1,9 @@
+# Imports
 
 
+
+
+# Necessary Functions
 def decimalCount(num):
     '''
     Determines the number of decimal places in the mantissa of a number to ensure proper precision.
@@ -10,12 +14,31 @@ def decimalCount(num):
     mantissa = num_len - dot_indx - 1
     return mantissa
 
+def add_precision(num1, num2):
+    num1, num2 = str(num1), str(num2)
+    prec_list = [0, 0]
+    count = 0
+    for num in [num1, num2]:
+        if num.find('.') != -1:
+            prec_list[count] = -1 * decimalCount(float(num1))
+        else:
+            reverse_num = num[::-1]
+            for index, digit in enumerate(reverse_num):                 #Checking for first nonzero digit
+                if digit != '0':
+                    prec_list[count] = index
+
+    pass
 
 
-# Making a class whose objects are sig figs coupled with error (for proper addition properties)
+
+
+
+# Classes
 class SigFigNum:
     '''
-    This class creates sig fig objects
+    This class creates sig fig objects with an associated error. It propagates error and sig figs correctly.
+
+    If there is no error, enter '0' for the error.
     '''
     def __init__(self, num, err):
         self.val = num
@@ -29,4 +52,10 @@ class SigFigNum:
         return sum_obj
     
     def __sub__(self, other):
+        pass
+
+    def __mul__(self, other):
+        pass
+
+    def __div__(self, other):
         pass
