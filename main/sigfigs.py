@@ -19,16 +19,19 @@ class SigFig:
     '''
 
     def __init__(self, num):
+        '''
+        This constructor automatically finds the number of sig figs and the least significant digit in the number upon instantiation.
+        '''
         self.val = str(num)
         self.getSigFigs()
         self.LeastSigDig()
+
 
     def getSigFigs(self):
         '''
         This method determines the number of sig figs in the number. It is called in the constructor and is thus calculated upon instantiation.
         '''
         num = self.val
-        #print(num)
         # 3 cases: no decimal point (e.g., 3500), |prod| < 1 (e.g., 0.0045), or float (e.g., 3.45)
         if num.find('.') != -1:                                         # If there's a decimal...
             new_num = num.replace('-', '')                              # Creating a new number without decimal or negative sign
@@ -50,11 +53,8 @@ class SigFig:
             first_nonzero = len(reverse_num)
             for index, digit in enumerate(reverse_num):                 # Checking for first nonzero digit
                 if digit != '0':
-                    print(index, digit)
                     first_nonzero = index
-                    print(first_nonzero)
-                    break
-            print(first_nonzero)   
+                    break 
             sf = len(new_num) - first_nonzero
         
         self.sigFigs = sf
@@ -114,67 +114,94 @@ class SigFig:
         Defines multiplication operation using significant figures. In multiplication, the minimum number of significant figures between the
         binary operators is conserved in the product.
         '''
-        try:                                                            # Try suite for floats. If exception is raised, they're ints
-            num1 = int(self.val)
-        except ValueError:
-            num1 = float(self.val)
-        
-        try:                                                            # Second try suite to check int vs. float of values
-            num2 = int(other.val)
-        except ValueError:
+        num1 = float(self.val)
+        # Checking if this is two sig figs or a constant multiple
+        if type(other) == SigFig:
             num2 = float(other.val)
+        else:
+            num2 = other
 
-        prod = str(num1 * num2)
-        sf = SigFig(prod).sigFigs
-        is_neg = False
-        
-        if prod.find('-') != -1:                                        # Negative number check
-            is_neg = True
-            prod = prod.replace('-', '')
+        prod = num1 * num2
+        # Getting number of sig figs for product
+        if type(other) == SigFig:
+            sf = min([self.sigFigs, other.sigFigs])
+        else:
+            sf = self.sigFigs
 
-        # 3 cases: no decimal point (e.g., 3500), |prod| < 1 (e.g., 0.0045), or generic float (e.g., 3.45)
-        if prod.find('.') == -1:                                        #IF there's no decimal point (i.e., an int like 3500)
-            prod = round(int(prod), -1*sf)
+        # Getting decimal point index
+        dec_indx = str(prod).find('.')
+
+        # If dec_indx > sf - 1, we need ints (decimal comes after the last sig fig):
+        if dec_indx >= sf:
+            prod = int(round(prod, sf - dec_indx))
 
         else:
-            dec_indx = prod.index('.')
-            if abs(float(prod)) >= 1:                                       # If it's greater than one (i.e., don't worry about leading zeros)
-                prod = round(float(prod), sf - dec_indx)
+            prod = round(prod, sf - dec_indx)
 
-            else:                                                         # If you do worry about leading zeros...
-                for index, digit in enumerate(prod):                        # Checking for first nonzero digit
-                    if digit != '0':
-                        first_nonzero = index
-                        break
-                prod = round(float(prod), first_nonzero + sf - dec_indx)
-
-        if is_neg:
-            prod = '-' + prod
-
-        prod = SigFig(prod)
-        return prod
+        return SigFig(prod)
+    
 
     def __div__(self, other):
         neg_other = SigFig(str(1/float(other.val)))
         return self.__mul__(neg_other)
+    
 
     def __pow__(self, other):
-        pass
+        '''
+        This method is for when a sig fig is raised to an exponent. Even if the exponent is also a sig fig, convention dictates that 
+        the number of sig figs in the base is the number of sig figs in the final result.
+        '''
+        num1 = float(self.val)
+        if type(other) == SigFig:
+            num2 = float(other.val)
+        else:
+            num2 = float(other)
+        
+        sf = self.sigFigs
+        result = num1 ** num2
+
+        # Getting decimal point index
+        dec_indx = str(result).find('.')
+
+        # If dec_indx > sf - 1, we need ints (decimal comes after the last sig fig):
+        if dec_indx >= sf:
+            result = int(round(result, sf - dec_indx))
+
+        else:
+            result = round(result, sf - dec_indx)
+
+        return SigFig(result)
+
+    def __rpow__(self, other):
+        '''
+        This function is for when a sig fig is used in the exponent, as opposed to the base. If both base and exponent are sig figs, see above;
+        if just the exponent is a sig fig, the number of sig figs in the exponent should be the number of sig figs in the result.
+        '''
+        if type(other) == SigFig:
+            result = other.__pow__(self)
+
+        else:
+            sf = self.sigFigs
+            result = other**float(self.val)
+            # Getting decimal point index
+            dec_indx = str(result).find('.')
+
+            # If dec_indx > sf - 1, we need ints (decimal comes after the last sig fig):
+            if dec_indx >= sf:
+                result = int(round(result, sf - dec_indx))
+
+            else:
+                result = round(result, sf - dec_indx)
+
+        return SigFig(result)
+
 
     def __repr__(self):
+        '''
+        Determines the output of the print() function on a SigFig data type.
+        '''
         return f'{self.val}'
 
-
-a = SigFig(-3)
-b = SigFig(700)
-
-c = SigFig(-0.501)
-d = SigFig(-0.04)
-e = SigFig(-5.23)
-f = SigFig(-2.345)
-print(a - e)
-#print(_21.sigFigs)
-#print(a+b)
 
 
 class SigFigData(SigFig):
@@ -209,3 +236,6 @@ class SigFigData(SigFig):
 
     def __pow__(self, other):
         num, pow = self.val, other
+
+    def __repr__(self):
+        return f'{self.val} +/- {self.err}'
