@@ -4,6 +4,7 @@ import fancytext as ft                              # My file for making text lo
 import panel as pn                                  # Main GUI workhorse
 import re                                           # For variable isolation
 from sympy.parsing.latex import parse_latex         # Converting Latex input to Sympy
+from sympy import solve, symbols                    # For solving. Dur.
 
 
 
@@ -32,19 +33,27 @@ class EqEntry:
 
     def on_update(self, event):
         # Getting the raw equation for LaTeX
-        self.raw_equation = fr'{self.eqbox.value}'
-        variables = re.findall(r'(?:\\[a-zA-Z]+(?:_\{[^}]+\}|\{[^}]+\}|_[a-zA-Zα-ωΑ-Ω0-9]+)?)|(?:[a-zA-Zα-ωΑ-Ω](?:_\{[^}]+\}|\{[^}]+\}|_[\\a-zA-Zα-ωΑ-Ω0-9]+)?)', self.raw_equation)
+        global RAW_EQUATION
+        RAW_EQUATION = fr'{self.eqbox.value}'
+        latex_equation = f'${RAW_EQUATION}$'
+
         
         # Getting the right LaTeX output
         latex_pattern = re.compile(r'\\(' + ft.greek_letter_pattern + r')(?=\S)(?!_)')
-        new_equation = latex_pattern.sub(r'\\\1 ', self.raw_equation)
+        new_equation = latex_pattern.sub(r'\\\1 ', latex_equation)
         self.latex.object = new_equation
 
         # Getting the options for the dropdown menu
-        variables = ft.transform_vars(variables)            # Making vars look nice
+        self.drop.value = 'No item selected'
+
+        global RAW_VARS
+        RAW_VARS = re.findall(r'(?:\\[a-zA-Z]+(?:_\{[^}]+\}|\{[^}]+\}|_[a-zA-Zα-ωΑ-Ω0-9]+)?)|(?:[a-zA-Zα-ωΑ-Ω](?:_\{[^}]+\}|\{[^}]+\}|_[\\a-zA-Zα-ωΑ-Ω0-9]+)?)', RAW_EQUATION)
+        
+        global VARS
+        VARS = ft.transform_vars(RAW_VARS)                  # Making vars look nice
         self.unique_variables = []                          # Use a list to maintain order 
         seen = set()                                        # Use a set to ensure variable uniqueness
-        for var in variables:                               # Ensuring unique variables
+        for var in VARS:                                    # Ensuring unique variables
             if var not in seen:
                 self.unique_variables.append(var)
                 seen.add(var)
@@ -61,7 +70,7 @@ class ErrorBox:
     OPTIONS = ['Meter Stick Reading Error', 'Meter Stick End Error', 'Digital Reading Error', 'ADC Error', 'Known Mass Error']
 
     def __init__(self):
-        self.meas = 0
+        self.meas = sf.SigFig(1)
 
         # Creating checkbox widget
         self.checkbox = pn.widgets.CheckBoxGroup(options=self.OPTIONS)
@@ -73,22 +82,26 @@ class ErrorBox:
         self.box = pn.WidgetBox('### Errors', self.checkbox)
 
     
-    def checkbox_callback(self, event):
+    def checkbox_callback(self, event=['test']):
         '''
         This method is enacted any time the checkbox group is updated. I.e., any time a checkbox is checked, this method happens.
         '''
         # Clear previous error
         self.err = 0
         self.errs = [0, 0, 0, 0, 0]
+        event = self.checkbox.value
+        print(event)
         # Iterate through all checkboxes
-        for item in event.new:
+        for item in event:
             method_name = f'{item.replace(' ', '_')}'
             getattr(self, method_name)
         
         # Getting total final error
         for item in self.errs:
             self.err += item
-    
+
+        # Rounding off error correctly
+        self.err = round(self.err, self.meas.lsd)
 
     def Meter_Stick_Reading_Error(self):
         self.errs[0] = 0.05         # Error in CENTIMETERS!
@@ -104,11 +117,11 @@ class ErrorBox:
 
 
     def ADC_Error(self):
-        self.errs[3] = 0.005 * self.meas
+        self.errs[3] = 0.005 * float(self.meas)
 
 
     def Known_Mass_Error(self):
-        self.errs[4] = 0.05 * self.meas
+        self.errs[4] = 0.05 * float(self.meas)
 
 
 class EntryItem:
@@ -130,14 +143,14 @@ class EntryItem:
 
         # Creating the layout
         column = pn.Column(self.varbox, self.uncertainty)
-        self.layout = pn.Row(column, self.errbox)
+        self.layout = pn.Row(column, self.errbox.box)
 
 
-    def text_callback(self):
+    def text_callback(self, event):
         # Setting the errorbox's measurement to the entered measurement
         self.errbox.meas = sf.SigFig(self.varbox.value)
         self.errbox.checkbox_callback()
-        self.uncertainty.value = self.errbox.err
+        self.uncertainty.value = str(self.errbox.err)
 
 
 class VarEntries:
@@ -147,18 +160,29 @@ class VarEntries:
     def __init__(self):
         self.eqEntry = EqEntry()
         # Once the drop box has a selection, the entries are generated
+        print(self.eqEntry.drop.value)
         self.eqEntry.drop.param.watch(self.generate_entries, 'value')
 
+        # Initial Layout
+        self.layout = pn.Column(self.eqEntry.layout)
 
-    def generate_entries(self):
+
+    def generate_entries(self, event):
         # Creating a cleaner name for the variables
-        vars = self.eqEntry.unique_variables
+        vars = VARS.copy()                          # Using .copy() method to avoid editing global variable
+        print(VARS)
+        raw_vars = RAW_VARS.copy()
         # Removing whatever is selected in the dropdown
         vars.remove(self.eqEntry.drop.value)
+        print(VARS)
+        global RAW_DROPDOWN_VAR
+        raw_dropdown_indx = VARS.index(self.eqEntry.drop.value)
+        RAW_DROPDOWN_VAR = RAW_VARS[raw_dropdown_indx]
+        raw_vars.remove(RAW_DROPDOWN_VAR)
         # Creating a column to store all of the EntryItem widgets
         boxes_column = pn.Column()
 
-        # Keeping track of EntryItems as they are created
+        # Keeping track of EntryItems in a dictionary as they are created
         self.entryItems = {}
 
         # This next bit ensures that the EntryItem objects come in two columns
@@ -169,15 +193,16 @@ class VarEntries:
             item1 = EntryItem(vars[indx])
             item2 = EntryItem(vars[indx+1])
             boxes_column.append(pn.Row(item1.layout, item2.layout))
-            self.entryItems[vars[indx]] = item1
+            self.entryItems[raw_vars[indx]] = item1
+            self.entryItems[raw_vars[indx+1]] = item2
             indx += 2
 
         # Dealing with remaining boxes (not even multiples of 2)
         if rem == 1:
             boxes_column.append(pn.Row(EntryItem(vars[indx]).layout))
-            self.entryItems.append(EntryItem(vars[indx]).layout)
+            self.entryItems[vars[indx]] = EntryItem(vars[indx])
 
-        self.layout = pn.Column(EqEntry.layout, boxes_column)
+        self.layout[:] = [self.eqEntry.layout, boxes_column]
 
 
 
@@ -195,9 +220,35 @@ class SigFigCalculator:
         # Binding the button the buttonClick method
         pn.bind(self.buttonClick, self.button, watch=True)
 
+        # Final layout
+        self.layout = pn.Column(self.varEntries.layout, self.button, self.solution_pane)
 
-    def buttonClick(self):
-        pass
+    def buttonClick(self, event):
+        # Creating the Sympy expression from the LaTeX string
+        print('Parsing')
+        expr = parse_latex(f'{RAW_EQUATION}')
+
+        # Creating a dictionary for substitutions
+        sub = {}
+        entryItems = self.varEntries.entryItems
+        # Collecting values from all of the EntryItems
+        for key in entryItems.keys():
+            sub[key] = sf.SigFigData(entryItems[key].varbox.value, entryItems[key].uncertainty.value)
+
+        # Making substitutions
+        print('Subbing')
+        expr_sub = expr.subs(sub)
+        # Solving
+        print('Solving')
+        soln = solve(expr_sub, RAW_DROPDOWN_VAR)
+
+        self.solution_pane.object = soln
+
+
+
 
 
 # GUI Setup
+calculator = SigFigCalculator()
+def fireItUp():
+    pn.serve(calculator.layout, port=5006, show=False)
