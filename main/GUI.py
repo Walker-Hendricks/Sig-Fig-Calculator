@@ -1,10 +1,9 @@
 # Imports
-import SigFigs as sf        # My classes for sig figs
-import panel as pn          # Main GUI workhorse
-import re                   # For variable isolation
-
-
-# Necessary Functions
+import SigFigs as sf                                # My classes for sig figs
+import fancytext as ft                              # My file for making text look nicer
+import panel as pn                                  # Main GUI workhorse
+import re                                           # For variable isolation
+from sympy.parsing.latex import parse_latex         # Converting Latex input to Sympy
 
 
 
@@ -17,8 +16,8 @@ class EqEntry:
     '''
     def __init__(self):
         # Creating the equation entry widget
-        self.eq = pn.widgets.TextInput(name='Enter Equation (LaTeX Format)', placeholder='Enter LaTeX equation here...')
-        self.eq.param.watch(self.on_update, 'value')
+        self.eqbox = pn.widgets.TextInput(name='Enter Equation (LaTeX Format)', placeholder='Enter LaTeX equation here...')
+        self.eqbox.param.watch(self.on_update, 'value')
 
         # Creating the LaTeX widget
         self.latex = pn.pane.LaTeX('')
@@ -27,18 +26,34 @@ class EqEntry:
         self.drop = pn.widgets.Select(name='Dependent Variable', options=['No item selected'])
 
         # Creating the layout
-        column = pn.Column(self.eq, self.drop)
+        column = pn.Column(self.eqbox, self.drop)
         self.layout = pn.Row(column, self.latex)
 
 
     def on_update(self, event):
-        pass
-    
+        # Getting the raw equation for LaTeX
+        self.raw_equation = fr'{self.eqbox.value}'
+        variables = re.findall(r'(?:\\[a-zA-Z]+(?:_\{[^}]+\}|\{[^}]+\}|_[a-zA-Zα-ωΑ-Ω0-9]+)?)|(?:[a-zA-Zα-ωΑ-Ω](?:_\{[^}]+\}|\{[^}]+\}|_[\\a-zA-Zα-ωΑ-Ω0-9]+)?)', self.raw_equation)
+        
+        # Getting the right LaTeX output
+        latex_pattern = re.compile(r'\\(' + ft.greek_letter_pattern + r')(?=\S)(?!_)')
+        new_equation = latex_pattern.sub(r'\\\1 ', self.raw_equation)
+        self.latex.object = new_equation
 
-# The next three classes use composition for each other.
-# The first makes a widgetbox with checkboxes for different kinds of error
-# The next creates a textbox for variable entry, adjacent to the widgetbox
-# The third creates one of the secondary objects for every variable identified.
+        # Getting the options for the dropdown menu
+        variables = ft.transform_vars(variables)            # Making vars look nice
+        self.unique_variables = []                          # Use a list to maintain order 
+        seen = set()                                        # Use a set to ensure variable uniqueness
+        for var in variables:                               # Ensuring unique variables
+            if var not in seen:
+                self.unique_variables.append(var)
+                seen.add(var)
+        
+        # Setting new dropdown menu
+        self.drop.options = ['No item selected'] + self.unique_variables
+
+
+
 class ErrorBox:
     '''
     This class defines the WidgetBox containing possible errors.
@@ -99,8 +114,6 @@ class ErrorBox:
 class EntryItem:
     '''
     This class defines how variables are entered into text boxes. Multiple of these will be created, one for every variable.
-
-    The reason this is a subclass of ErrorBox is because the error box is included in this object.
     '''
 
     def __init__(self, var_name):
@@ -126,6 +139,65 @@ class EntryItem:
         self.errbox.checkbox_callback()
         self.uncertainty.value = self.errbox.err
 
+
+class VarEntries:
+    '''
+    This class outlines how to set up all of the EntryItem objects for every detected variable.
+    '''
+    def __init__(self):
+        self.eqEntry = EqEntry()
+        # Once the drop box has a selection, the entries are generated
+        self.eqEntry.drop.param.watch(self.generate_entries, 'value')
+
+
+    def generate_entries(self):
+        # Creating a cleaner name for the variables
+        vars = self.eqEntry.unique_variables
+        # Removing whatever is selected in the dropdown
+        vars.remove(self.eqEntry.drop.value)
+        # Creating a column to store all of the EntryItem widgets
+        boxes_column = pn.Column()
+
+        # Keeping track of EntryItems as they are created
+        self.entryItems = {}
+
+        # This next bit ensures that the EntryItem objects come in two columns
+        length = len(vars) // 2
+        rem = len(vars) % 2
+        indx = 0
+        for i in range(length):
+            item1 = EntryItem(vars[indx])
+            item2 = EntryItem(vars[indx+1])
+            boxes_column.append(pn.Row(item1.layout, item2.layout))
+            self.entryItems[vars[indx]] = item1
+            indx += 2
+
+        # Dealing with remaining boxes (not even multiples of 2)
+        if rem == 1:
+            boxes_column.append(pn.Row(EntryItem(vars[indx]).layout))
+            self.entryItems.append(EntryItem(vars[indx]).layout)
+
+        self.layout = pn.Column(EqEntry.layout, boxes_column)
+
+
+
+
+
+class SigFigCalculator:
+    
+    def __init__(self):
+        self.varEntries = VarEntries()
+        # Creating the button for calculation
+        self.button = pn.widgets.Button(name='Calculate', button_type='success')
+        # Creating the LaTeX pane to show the solution
+        self.solution_pane = pn.pane.LaTeX('')
+
+        # Binding the button the buttonClick method
+        pn.bind(self.buttonClick, self.button, watch=True)
+
+
+    def buttonClick(self):
+        pass
 
 
 # GUI Setup
