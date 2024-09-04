@@ -1,8 +1,9 @@
 import webview
 import threading
+import GUI
 
 def start_panel_server():
-    import GUI  # This will start the panel server
+    GUI.fireItUp()  # This will start the panel server
 
 # Start the Panel server in a separate thread
 server_thread = threading.Thread(target=start_panel_server)
